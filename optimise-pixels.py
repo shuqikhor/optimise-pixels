@@ -17,7 +17,7 @@ import os.path
 import xml.etree.ElementTree as ET 
 from PixelBank import PixelBank
 from EdgeMap import EdgeMap
-import svg
+import SVGhelper as SVG
 
 def main():
 	filename = get_filename()
@@ -83,11 +83,11 @@ def main():
 		for chunk in edge_maps[colour]:
 			# if chunk is a rectangle, convert to <rect />
 			if len(chunk) == 1 and is_rect(chunk[0]["points"]):
-				tag = svg.get_svg_rect(**chunk[0], colour=colour)
+				tag = SVG.get_svg_rect(**chunk[0], colour=colour)
 
 			# otherwise, convert to <path />
 			else:
-				tag = svg.get_svg_path(chunk, colour)
+				tag = SVG.get_svg_path(chunk, colour)
 
 			tags.append(tag)
 
