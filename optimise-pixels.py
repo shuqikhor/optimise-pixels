@@ -15,6 +15,7 @@
 import sys
 import os.path
 import xml.etree.ElementTree as ET 
+import re
 
 def main():
 	filename = get_filename()
@@ -28,11 +29,36 @@ def main():
 		'svg': 'http://www.w3.org/2000/svg', 
 		'xlink': 'http://www.w3.org/1999/xlink'
 	}
-	for item in root.findall('.//svg:rect', ns_array):
+
+	css_classes = {}
+	for item in root.findall(".//svg:style", ns_array):
+		style_text = item.text.split("\n")
+		current_class = None
+		current_colour = None
+		for line in style_text:
+			css_search = re.search(r"\.(\w+)", line)
+			if css_search != None:
+				current_class = css_search.group(1)
+			
+			fill_search = re.search(r"fill:\s*(#[A-Fa-f\d]{6})", line)
+			if fill_search != None:
+				current_colour = fill_search.group(1).upper()
+
+			if current_class != None and current_colour != None:
+				css_classes[current_class] = current_colour
+				current_colour = None
+				current_class = None
+
+	for item in root.findall(".//svg:rect", ns_array):
 		attr = item.attrib
-		colour = attr['fill'].upper()
 		x = int(attr["x"] if "x" in attr else 0)
 		y = int(attr["y"] if "y" in attr else 0)
+
+		if "fill" in attr:
+			colour = attr["fill"].upper()
+		elif "class" in attr:
+			colour = css_classes[attr["class"]]
+
 		if not colour in pixel_groups:
 			pixel_groups[colour] = PixelBank()
 		pixel_groups[colour].add_pixel(x, y)
