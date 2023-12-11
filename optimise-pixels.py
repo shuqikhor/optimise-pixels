@@ -15,9 +15,6 @@
 import sys
 import os.path
 import xml.etree.ElementTree as ET 
-from PixelBank import PixelBank
-from EdgeMap import EdgeMap
-import SVGhelper as SVG
 
 def main():
 	filename = get_filename()
@@ -83,11 +80,11 @@ def main():
 		for chunk in edge_maps[colour]:
 			# if chunk is a rectangle, convert to <rect />
 			if len(chunk) == 1 and is_rect(chunk[0]["points"]):
-				tag = SVG.get_svg_rect(**chunk[0], colour=colour)
+				tag = get_svg_rect(**chunk[0], colour=colour)
 
 			# otherwise, convert to <path />
 			else:
-				tag = SVG.get_svg_path(chunk, colour)
+				tag = get_svg_path(chunk, colour)
 
 			tags.append(tag)
 
@@ -142,6 +139,255 @@ def is_rect(polygon):
 		last_point = this_point
 	
 	return len(optimised) == 4
+
+
+# from https://stackoverflow.com/questions/1165647/how-to-determine-if-a-list-of-polygon-points-are-in-clockwise-order
+# since svg uses inverted Y-axis, negative is clockwise
+def is_clockwise(polygon):
+	result = 0
+	for i in range(len(polygon)):
+		start, end = (polygon[i], polygon[(i+1)%len(polygon)])
+		result += (end[0] - start[0]) * (end[1] + start[1])
+	return result < 0
+
+
+# This class is used to store pixels of the same color
+# It will then split the pixels into chunks
+class PixelBank:
+	def __init__(self):
+		self.pixels = set()
+	
+	def add_pixel(self, x, y):
+		self.pixels.add((x, y))
+	
+	def group_pixels(self):
+		groups = []
+
+		# loop until all pixels are processed
+		while len(self.pixels):
+			# pop a random pixel then start flooding to all edges
+			frontier = [self.pixels.pop()]
+			group = set()
+
+			# I'm using a queue here because BFS feels more like 'flooding'
+			while len(frontier):
+				head = frontier[0]
+				frontier = frontier[1:]
+				group.add(head)
+
+				# add the pixel above and below to frontier
+				for dy in [-1, 1]:
+					neighbour = (head[0], head[1] + dy)
+					if neighbour in self.pixels:
+						frontier.append(neighbour)
+						self.pixels.remove(neighbour)
+
+				# trace left and right until boundary
+				for dx in [-1, 1]:
+					neighbour_x = (head[0] + dx, head[1])
+					while neighbour_x in self.pixels:
+						# add the pixel above and below to frontier
+						for dy in [-1, 1]:
+							neighbour_y = (neighbour_x[0], neighbour_x[1] + dy)
+							if neighbour_y in self.pixels:
+								frontier.append(neighbour_y)
+								self.pixels.remove(neighbour_y)
+						
+						# move to group
+						self.pixels.remove(neighbour_x)
+						group.add(neighbour_x)
+
+						# take another step to the neighbour_x
+						neighbour_x = (neighbour_x[0] + dx, neighbour_x[1])
+
+			groups.append(group)
+		
+		return groups
+
+
+class EdgeMap:
+	# todo: instead of generating an edge map, convert to a bunch of lines directly
+	def __init__(self, from_pixels):
+		# find dimension (from 0,0)
+		self.width = max([pixel[0] for pixel in from_pixels]) + 1
+		self.height = max([pixel[1] for pixel in from_pixels]) + 1
+
+		# since this is an edge map, it will be 1 col & row bigger than a pixel map
+		self.grid = []
+		for row in range(self.height + 1):
+			edge_row = []
+			for col in range(self.width + 1):
+				# (edge-rightwards, edge-downwards) of a corner
+				edge_row.append((False, False))
+			self.grid.append(edge_row)
+		
+		"""
+		current state (assume it's from 2x2 pixels, then it will be a 3x3 grid):
+			self.grid = [
+				[ (edge-rightwards, edge-downwards) * 3 ],
+				[ (edge-rightwards, edge-downwards) * 3 ],
+				[ (edge-rightwards, edge-downwards) * 3 ]
+			]
+		which means at the right-most column, the "edge-rightwards" is always False
+		"""
+
+		# it's a bit awkward when plotting but let's just do it
+		# here we flip the state of all 4 edges of a pixel
+		# overlapping edges (edges between 2 pixels) will cancel each other in the process
+		for pixel in from_pixels:
+			x, y = pixel
+
+			# top left corner
+			self.grid[y][x] = (not self.grid[y][x][0], not self.grid[y][x][1])
+
+			# top right corner
+			self.grid[y][x+1] = (self.grid[y][x+1][0], not self.grid[y][x+1][1])
+
+			# bottom left corner
+			self.grid[y+1][x] = (not self.grid[y+1][x][0], self.grid[y+1][x][1])
+	
+	# this is to illustrate the outcome, for debugging purpose
+	def print(self):
+		print("width x height:", self.width, self.height)
+
+		for y in range(self.height+1):
+			row = ""
+			for x in range(self.width+1):
+				row += "---" if self.grid[y][x][0] else "   "
+			print(row)
+			row = ""
+			for x in range(self.width+1):
+				row += "|  " if self.grid[y][x][1] else "   "
+			print(row)
+
+	# trace the lines to generate polygons from the chunk
+	def generate_polygon(self):
+
+		# convert all edges to lines ((x1,y1), (x2,y2))
+		lines = set()
+		for y in range(self.height + 1):
+			for x in range(self.width + 1):
+				if self.grid[y][x][0]:
+					line = (
+						(x, y),
+						(x+1, y)
+					)
+					lines.add(line)
+				if self.grid[y][x][1]:
+					line = (
+						(x, y),
+						(x, y+1)
+					)
+					lines.add(line)
+		
+		# start depth first search
+		polygons = list()
+		explored_dots = set()
+		frontier = []
+		while len(lines):
+			current_line = list(lines)[0]
+			node = {
+				"start": current_line[0],
+				"end": current_line[1],
+				"line": current_line,
+				"parent": None
+			}
+			frontier = [node]
+			explored_dots.add(node["start"])
+
+			while len(frontier):
+				node = frontier[0]
+				frontier = frontier[1:]
+
+				# skip if line no longer exist in lines set
+				if node["line"] not in lines:
+					continue
+				lines.remove(node["line"])
+
+				# when hit the start or the middle of the path, trace back and generate a path
+				dot = node["end"]
+				if dot in explored_dots:
+					polygon = [node["start"]]
+
+					node_header = node
+					while node_header["parent"] != None and node_header["start"] != dot:
+						node_header = node_header["parent"]
+						polygon = [node_header["start"]] + polygon
+					
+					if is_clockwise(polygon):
+						polygon.reverse()
+					polygons.append(polygon)
+					continue
+
+				# add the next connecting-line to frontier
+				for line in lines:
+					if line[0] != dot and line[1] != dot:
+						continue
+					start = line[0] if line[0] == dot else line[1]
+					end = line[1] if line[0] == dot else line[0]
+					new_node = {
+						"start": start,
+						"end": end,
+						"line": line,
+						"parent": node
+					}
+					frontier = [new_node] + frontier
+
+				explored_dots.add(dot)
+
+		return polygons
+	
+
+def get_svg_path(polygons, colour):
+	left_most = min([p["left"] for p in polygons])
+	top_most = min([p["top"] for p in polygons])
+
+	polygons.sort(key=lambda x:x["left"])
+
+	paths = []
+	for polygon in polygons:
+		points = polygon["points"]
+
+		# reverse points (make it counter-clockwise) if it's a cutout
+		if polygon["left"] != left_most or polygon["top"] != top_most:
+			points.reverse()
+
+		path = ""
+		last_point = points[-1]
+		for i in range(len(points)):
+			point = points[i]
+			next_point = points[(i+1)%len(points)]
+
+			if point[0] == next_point[0] and point[0] == (last_point[0] if last_point != None else False):
+				continue
+
+			if point[1] == next_point[1] and point[1] == (last_point[1] if last_point != None else False):
+				continue
+
+			if path == "":
+				path += f"M{point[0]},{point[1]}"
+			else:
+				dx = point[0] - last_point[0]
+				dy = point[1] - last_point[1]
+
+				if dx == 0:
+					# path += f"v{dy}"
+					path += f"V{point[1]}"
+				elif dy == 0:
+					# path += f"h{dx}"
+					path += f"H{point[0]}"
+				else:
+					# path += f"l{dx},{dy}"
+					path += f"L{point[0]},{point[1]}"
+
+			last_point = point
+		path += "z"
+		paths.append(path)
+	svg_path = " ".join(paths)
+	return f'<path fill="{colour}" d="{svg_path}"/>'
+
+def get_svg_rect(colour, left, top, width, height, points = []):
+	return f'<rect fill="{colour}" x="{left}" y="{top}" width="{width}" height="{height}"/>'
 
 
 if __name__ == "__main__":
