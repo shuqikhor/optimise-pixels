@@ -341,6 +341,7 @@ class EdgeMap:
 					if is_clockwise(polygon):
 						polygon.reverse()
 					polygons.append(polygon)
+					explored_dots.remove(dot)
 					continue
 
 				# add the next connecting-line to frontier
