@@ -54,10 +54,17 @@ def main():
 		x = int(attr["x"] if "x" in attr else 0)
 		y = int(attr["y"] if "y" in attr else 0)
 
+		colour = None
 		if "fill" in attr:
 			colour = attr["fill"].upper()
 		elif "class" in attr:
 			colour = css_classes[attr["class"]]
+		elif "style" in attr:
+			fill_search = re.search(r"fill\s*:\s*(#[A-Fa-f\d]{6})", attr["style"])
+			if fill_search != None:
+				colour = fill_search.group(1).upper()
+		if colour == None:
+			continue
 
 		if not colour in pixel_groups:
 			pixel_groups[colour] = PixelBank()
