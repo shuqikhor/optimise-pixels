@@ -22,6 +22,10 @@ def main():
 	tree = ET.parse(filename)
 	root = tree.getroot()
 	pixel_groups = {}
+
+	# recycle viewbox if possible
+	root_attr = root.attrib
+	view_box = root_attr["viewBox"] if "viewBox" in root_attr else "0 0 9 9"
 	
 	# extract all pixels
 	# group them by colour as PixelBank object
@@ -120,7 +124,7 @@ def main():
 
 			tags.append(tag)
 
-	svg_content = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9">\n'
+	svg_content = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}">\n'
 	for tag in tags:
 		svg_content += f"\t{tag}\n"
 	svg_content += "</svg>"
