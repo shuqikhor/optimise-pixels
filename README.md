@@ -1,4 +1,4 @@
-This script assumes that you're feeding in an svg with a bunch of `<rect />` such as this:
+This script assumes that you're feeding in an svg with a bunch of 1x1 `<rect />` that represent the pixels, such as this:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
