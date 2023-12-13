@@ -9,80 +9,57 @@ def is_clockwise(polygon):
 
 
 class EdgeMap:
-
-	# todo: instead of generating an edge map, convert to a bunch of lines directly
 	def __init__(self, from_pixels):
-		# find dimension (from 0,0)
-		self.width = max([pixel[0] for pixel in from_pixels]) + 1
-		self.height = max([pixel[1] for pixel in from_pixels]) + 1
-
-		# since this is an edge map, it will be 1 col & row bigger than a pixel map
-		self.grid = []
-		for row in range(self.height + 1):
-			edge_row = []
-			for col in range(self.width + 1):
-				# (edge-rightwards, edge-downwards) of a corner
-				edge_row.append((False, False))
-			self.grid.append(edge_row)
-		
-		"""
-		current state (assume it's from 2x2 pixels, then it will be a 3x3 grid):
-			self.grid = [
-				[ (edge-rightwards, edge-downwards) * 3 ],
-				[ (edge-rightwards, edge-downwards) * 3 ],
-				[ (edge-rightwards, edge-downwards) * 3 ]
-			]
-		which means at the right-most column, the "edge-rightwards" is always False
-		"""
-
-		# it's a bit awkward when plotting but let's just do it
-		# here we flip the state of all 4 edges of a pixel
-		# overlapping edges (edges between 2 pixels) will cancel each other in the process
+		self.lines = list()
 		for pixel in from_pixels:
 			x, y = pixel
 
-			# top left corner
-			self.grid[y][x] = (not self.grid[y][x][0], not self.grid[y][x][1])
+			points = [
+				(x  , y  ),
+				(x+1, y  ),
+				(x+1, y+1),
+				(x  , y+1)
+			]
 
-			# top right corner
-			self.grid[y][x+1] = (self.grid[y][x+1][0], not self.grid[y][x+1][1])
+			# the points in these lines are arranged in top-down left-to-right manner
+			lines = [
+				[points[0], points[1]],
+				[points[1], points[2]],
+				[points[3], points[2]],
+				[points[0], points[3]]
+			]
 
-			# bottom left corner
-			self.grid[y+1][x] = (not self.grid[y+1][x][0], self.grid[y+1][x][1])
+			for line in lines:
+				# if not found, add
+				# if found, delete
+				# this will cancel out overlapped lines
+				if line in self.lines:
+					self.lines.remove(line)
+				else:
+					self.lines.append(line)
 	
 	# this is to illustrate the outcome, for debugging purpose
 	def print(self):
-		print("width x height:", self.width, self.height)
+		points = [l[0] for l in self.lines] + [l[1] for l in self.lines]
+		x = [p[0] for p in points]
+		y = [p[1] for p in points]
+		width = max(x) + 1
+		height = max(y) + 1
+		print(f"width x height: {width} x {height}")
 
-		for y in range(self.height+1):
+		for y in range(height):
 			row = ""
-			for x in range(self.width+1):
-				row += "---" if self.grid[y][x][0] else "   "
+			for x in range(width):
+				row += "---" if [(x, y), (x+1, y)] in self.lines else "   "
 			print(row)
 			row = ""
-			for x in range(self.width+1):
-				row += "|  " if self.grid[y][x][1] else "   "
+			for x in range(width):
+				row += "|  " if [(x, y), (x, y+1)] in self.lines else "   "
 			print(row)
 
 	# trace the lines to generate polygons from the chunk
 	def generate_polygon(self):
-
-		# convert all edges to lines ((x1,y1), (x2,y2))
-		lines = set()
-		for y in range(self.height + 1):
-			for x in range(self.width + 1):
-				if self.grid[y][x][0]:
-					line = (
-						(x, y),
-						(x+1, y)
-					)
-					lines.add(line)
-				if self.grid[y][x][1]:
-					line = (
-						(x, y),
-						(x, y+1)
-					)
-					lines.add(line)
+		lines = self.lines
 		
 		# start depth first search
 		polygons = list()
